@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Activity, Network, Shield, Settings, LogOut, BarChart, Globe, ShieldAlert } from "lucide-react";
+import { Activity, Network, Shield, Settings, LogOut, BarChart, Globe, ShieldAlert, Palette } from "lucide-react";
 
 export default function Sidebar() {
     const pathname = usePathname();
@@ -16,6 +16,7 @@ export default function Sidebar() {
 
         { name: "Analytics", href: "/analytics", icon: BarChart },
         { name: "Settings", href: "/settings", icon: Settings },
+        { name: "Portal Editor", href: "/settings/portal", icon: Palette },
     ];
 
     return (

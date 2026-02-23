@@ -2,42 +2,68 @@
 
 import React, { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
+import { Wifi, AlertCircle, CheckCircle2 } from 'lucide-react';
+
+interface PortalSettings {
+    brand_name: string;
+    primary_color: string;
+    welcome_text: string;
+    terms_text: string;
+    background_image_url: string;
+    require_terms_acceptance: boolean;
+}
 
 function PortalLoginContent() {
     const searchParams = useSearchParams();
+    const [status, setStatus] = useState<'idle' | 'authenticating' | 'success' | 'error'>('idle');
+    const [errorMessage, setErrorMessage] = useState('');
+
     const res = searchParams.get('res');
     const challenge = searchParams.get('challenge');
+    const uamip = searchParams.get('uamip') || '10.1.0.1';
+    const uamport = searchParams.get('uamport') || '3990';
+    const userurl = searchParams.get('userurl') || 'http://www.google.com';
+
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
-    const [error, setError] = useState('');
-    const [loading, setLoading] = useState(false);
+    const [acceptedTerms, setAcceptedTerms] = useState(false);
+    const [settings, setSettings] = useState<PortalSettings | null>(null);
 
     useEffect(() => {
+        fetch('http://localhost:8000/portal/settings')
+            .then(res => res.json())
+            .then(data => setSettings(data))
+            .catch(err => console.error("Could not load portal settings", err));
+
         if (res === 'notyet') {
             // Normal login prompt
-        } else if (res === 'failed') {
-            setError('Invalid username or password.');
-        } else if (res === 'success') {
-            // Typically the controller redirects immediately, but just in case:
-            window.location.href = 'https://www.google.com';
+        } else if (res === 'failed' || res === 'logoff') {
+            setStatus('error');
+            setErrorMessage('Authentication failed. Please check your credentials.');
+        } else if (res === 'success' || res === 'already') {
+            setStatus('success');
+            setTimeout(() => {
+                window.location.href = userurl;
+            }, 3000);
         }
-    }, [res]);
+    }, [res, userurl]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        setLoading(true);
-        setError('');
 
-        // To process the UAM login, we actually need to submit to our *own* local controller backend first or directly to Chilli
-        // Our backend will calculate the CHAP challenge response using the FreeRADIUS shared secret or we can just proxy cleartext to CoovaChilli 
-        // CoovaChilli UAM standard: http://uamip:uamport/logon?username=x&password=y
+        if (settings?.require_terms_acceptance && !acceptedTerms) {
+            setStatus('error');
+            setErrorMessage("You must accept the terms of service to connect.");
+            return;
+        }
 
-        const uamip = searchParams.get('uamip') || '10.1.0.1';
-        const uamport = searchParams.get('uamport') || '3990';
+        setStatus('authenticating');
+        setErrorMessage('');
+
         const loginUrl = `http://${uamip}:${uamport}/logon`;
 
         try {
-            // Create a form programmatically to submit the standard CoovaChilli UAM GET/POST
+            // Proxy standard CoovaChilli UAM form submission
             const form = document.createElement('form');
             form.method = 'GET';
             form.action = loginUrl;
@@ -59,81 +85,137 @@ function PortalLoginContent() {
             form.submit();
 
         } catch (err) {
-            setError('An error occurred during login. Please try again.');
-            setLoading(false);
+            setStatus('error');
+            setErrorMessage('An error occurred during network login.');
         }
     };
 
-    return (
-        <div className="w-full max-w-md p-8 space-y-8 bg-gray-800 rounded-xl shadow-2xl border border-gray-700">
-            <div className="text-center">
-                <h2 className="mt-6 text-3xl font-extrabold text-white">
-                    Universal Access
-                </h2>
-                <p className="mt-2 text-sm text-gray-400">
-                    Please log in to access the network
-                </p>
-            </div>
+    if (!settings) {
+        return <div className="min-h-screen flex items-center justify-center bg-gray-900 text-white">Loading Portal...</div>;
+    }
 
-            {res === 'success' ? (
-                <div className="text-center text-green-400 p-4 bg-green-900/20 rounded border border-green-800">
-                    <p>You are connected!</p>
-                    <a href="https://www.google.com" className="mt-4 inline-block underline hover:text-green-300">Continue to the internet</a>
+    if (status === 'success') {
+        return (
+            <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
+                <div className="max-w-md w-full bg-gray-800 rounded-xl shadow-2xl overflow-hidden border border-gray-700 p-8 text-center space-y-4">
+                    <CheckCircle2 size={64} className="mx-auto text-green-500" />
+                    <h2 className="text-2xl font-bold text-white">Connected!</h2>
+                    <p className="text-gray-400">You now have internet access.</p>
+                    <p className="text-sm text-gray-500">Redirecting to {userurl} ...</p>
                 </div>
-            ) : (
-                <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
-                    {error && (
-                        <div className="text-red-400 text-sm text-center bg-red-900/20 py-2 rounded">
-                            {error}
+            </div>
+        );
+    }
+
+    return (
+        <div className="min-h-screen bg-gray-900 flex flex-col justify-center relative overflow-hidden"
+            style={{
+                backgroundImage: settings.background_image_url ? `url(${settings.background_image_url})` : 'none',
+                backgroundSize: 'cover',
+                backgroundPosition: 'center',
+                backgroundAttachment: 'fixed'
+            }}>
+
+            {/* Background Dimmer */}
+            {settings.background_image_url && <div className="absolute inset-0 bg-black/60 z-0"></div>}
+
+            <div className="sm:mx-auto sm:w-full sm:max-w-md relative z-10 px-4">
+                <div className="bg-white py-8 px-4 shadow-2xl sm:rounded-lg sm:px-10">
+                    <div className="mb-6 text-center">
+                        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full" style={{ backgroundColor: `${settings.primary_color}20` }}>
+                            <Wifi className="h-8 w-8" style={{ color: settings.primary_color }} />
+                        </div>
+                        <h2 className="mt-4 text-center text-3xl font-extrabold text-gray-900">
+                            {settings.brand_name}
+                        </h2>
+                        <p className="mt-2 text-center text-sm text-gray-600">
+                            {settings.welcome_text}
+                        </p>
+                    </div>
+
+                    {status === 'error' && errorMessage && (
+                        <div className="mb-4 bg-red-50 border-l-4 border-red-400 p-4">
+                            <div className="flex">
+                                <div className="flex-shrink-0">
+                                    <AlertCircle className="h-5 w-5 text-red-400" />
+                                </div>
+                                <div className="ml-3">
+                                    <p className="text-sm text-red-700">{errorMessage}</p>
+                                </div>
+                            </div>
                         </div>
                     )}
-                    <div className="rounded-md shadow-sm -space-y-px">
-                        <div>
-                            <label htmlFor="username" className="sr-only">Username</label>
-                            <input
-                                id="username"
-                                name="username"
-                                type="text"
-                                required
-                                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-600 placeholder-gray-400 text-white bg-gray-700 rounded-t-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
-                                placeholder="Username or Voucher Code"
-                                value={username}
-                                onChange={(e) => setUsername(e.target.value)}
-                            />
-                        </div>
-                        <div>
-                            <label htmlFor="password" className="sr-only">Password</label>
-                            <input
-                                id="password"
-                                name="password"
-                                type="password"
-                                required
-                                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-600 placeholder-gray-400 text-white bg-gray-700 rounded-b-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
-                                placeholder="Password"
-                                value={password}
-                                onChange={(e) => setPassword(e.target.value)}
-                            />
-                        </div>
-                    </div>
 
-                    <div>
-                        <button
-                            type="submit"
-                            disabled={loading}
-                            className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 focus:ring-offset-gray-900 transition-colors disabled:opacity-50"
-                        >
-                            {loading ? 'Authenticating...' : 'Connect to Wi-Fi'}
-                        </button>
-                    </div>
-                </form>
-            )}
+                    <form className="space-y-6" onSubmit={handleSubmit}>
+                        <div className="rounded-md shadow-sm -space-y-px">
+                            <div>
+                                <label htmlFor="username" className="sr-only">Username</label>
+                                <input
+                                    id="username"
+                                    name="username"
+                                    type="text"
+                                    required
+                                    className="appearance-none rounded-none relative block w-full px-3 py-3 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
+                                    placeholder="Username or Voucher Code"
+                                    value={username}
+                                    onChange={(e) => setUsername(e.target.value)}
+                                />
+                            </div>
+                            <div>
+                                <label htmlFor="password" className="sr-only">Password</label>
+                                <input
+                                    id="password"
+                                    name="password"
+                                    type="password"
+                                    required
+                                    className="appearance-none rounded-none relative block w-full px-3 py-3 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
+                                    placeholder="Password"
+                                    value={password}
+                                    onChange={(e) => setPassword(e.target.value)}
+                                />
+                            </div>
+                        </div>
+
+                        {settings.require_terms_acceptance && (
+                            <div className="flex items-start bg-gray-50 p-3 rounded-md border border-gray-200">
+                                <div className="flex h-5 items-center">
+                                    <input
+                                        id="terms"
+                                        name="terms"
+                                        type="checkbox"
+                                        checked={acceptedTerms}
+                                        onChange={(e) => setAcceptedTerms(e.target.checked)}
+                                        className="h-4 w-4 rounded border-gray-300"
+                                        style={{ accentColor: settings.primary_color }}
+                                    />
+                                </div>
+                                <div className="ml-3 text-sm">
+                                    <label htmlFor="terms" className="font-medium text-gray-700">Accept Terms</label>
+                                    <p className="text-gray-500 text-xs mt-1">{settings.terms_text}</p>
+                                </div>
+                            </div>
+                        )}
+
+                        <div>
+                            <button
+                                type="submit"
+                                disabled={status === 'authenticating'}
+                                className="w-full flex justify-center py-3 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 transition-colors"
+                                style={{ backgroundColor: settings.primary_color }}
+                            >
+                                {status === 'authenticating' ? 'Authenticating...' : 'Connect to Wi-Fi'}
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
         </div>
     );
 }
 
 export default function PortalPage() {
     return (
-        <Suspense fallback={<div className="text-white">Loading portal...</div>}>
+        <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-gray-900 text-white">Loading UAC Portal...</div>}>
             <PortalLoginContent />
         </Suspense>
     );
