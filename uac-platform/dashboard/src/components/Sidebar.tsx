@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Activity, Network, Shield, Settings, LogOut } from "lucide-react";
+import { Activity, Network, Shield, Settings, LogOut, BarChart } from "lucide-react";
 
 export default function Sidebar() {
     const pathname = usePathname();
@@ -11,6 +11,7 @@ export default function Sidebar() {
         { name: "Dashboard", href: "/dashboard", icon: Activity },
         { name: "Network", href: "/network", icon: Network },
         { name: "Security", href: "/security", icon: Shield },
+        { name: "Analytics", href: "/analytics", icon: BarChart },
         { name: "Settings", href: "/settings", icon: Settings },
     ];
 
@@ -29,8 +30,8 @@ export default function Sidebar() {
                                 key={item.name}
                                 href={item.href}
                                 className={`flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors ${isActive
-                                        ? "bg-blue-600 text-white"
-                                        : "text-gray-300 hover:bg-gray-800 hover:text-white"
+                                    ? "bg-blue-600 text-white"
+                                    : "text-gray-300 hover:bg-gray-800 hover:text-white"
                                     }`}
                             >
                                 <Icon className={`mr-3 h-5 w-5 ${isActive ? "text-white" : "text-gray-400"}`} />
