@@ -1,0 +1,115 @@
+version: '3.8'
+
+services:
+  # ---------------------------------------------------------------------------
+  # Database Layer (MariaDB)
+  # Stores User Data, RADIUS Accounting, and App Configs
+  # ---------------------------------------------------------------------------
+  db:
+    image: mariadb:10.11
+    container_name: uac-db
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: admin_root_password # TODO: Change for production
+      MYSQL_DATABASE: uac_db
+      MYSQL_USER: uac_admin
+      MYSQL_PASSWORD: uac_password
+    volumes:
+      - db_data:/var/lib/mysql
+    networks:
+      - uac_net
+    healthcheck:
+      test: [ "CMD", "healthcheck.sh", "--connect", "--innodb_initialized" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ---------------------------------------------------------------------------
+  # Redis
+  # High-speed session caching and potential message broker
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: uac-redis
+    restart: always
+    networks:
+      - uac_net
+
+  # ---------------------------------------------------------------------------
+  # FreeRADIUS
+  # The AAA Server. Configured to look at MariaDB for users.
+  # ---------------------------------------------------------------------------
+  freeradius:
+    image: freeradius/freeradius-server:latest
+    container_name: uac-radius
+    restart: always
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_USER: uac_admin
+      DB_PASS: uac_password
+      DB_NAME: uac_db
+    ports:
+      - "1812:1812/udp" # Authentication
+      - "1813:1813/udp" # Accounting
+    volumes:
+      - ./radius-config:/etc/raddb/mods-config/files:ro # Mount custom configs if needed
+    networks:
+      - uac_net
+
+  # ---------------------------------------------------------------------------
+  # Controller (The Brain)
+  # FastAPI Backend for Management & Orchestration
+  # ---------------------------------------------------------------------------
+  controller:
+    build: ./controller
+    container_name: uac-controller
+    restart: always
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    environment:
+      DB_HOST: db
+      DB_USER: uac_admin
+      DB_PASS: uac_password
+      DB_NAME: uac_db
+      REDIS_HOST: redis
+      HOST_FS_ROOT: /host-fs
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./controller:/app
+      - /var/run/docker.sock:/var/run/docker.sock # For managing Chilli containers (future)
+      - ./host-simulation:/host-fs
+    networks:
+      - uac_net
+
+  # ---------------------------------------------------------------------------
+  # Dashboard (The Vibe)
+  # Next.js Frontend
+  # ---------------------------------------------------------------------------
+  dashboard:
+    build: ./dashboard
+    container_name: uac-dashboard
+    restart: always
+    depends_on:
+      - controller
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./dashboard:/app
+      - /app/node_modules
+    networks:
+      - uac_net
+
+networks:
+  uac_net:
+    driver: bridge
+
+volumes:
+  db_data:
