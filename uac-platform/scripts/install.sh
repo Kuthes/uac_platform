@@ -14,6 +14,10 @@ echo "=================================================="
 echo " Starting UAC Platform Installation (Draft)"
 echo "=================================================="
 
+# Determine Absolute Project Root
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &> /dev/null && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+
 # 1. Update and Install Core Dependencies
 echo "[1/6] Installing system dependencies..."
 apt-get update
@@ -43,7 +47,7 @@ fi
 echo "[4/6] Setting up UAC Controller Engine..."
 CONTROLLER_DIR="/opt/uac-controller"
 mkdir -p "$CONTROLLER_DIR"
-cp -r ./controller/* $CONTROLLER_DIR/
+cp -r "$PROJECT_ROOT/controller/"* "$CONTROLLER_DIR/"
 python3 -m venv "$CONTROLLER_DIR/venv"
 source "$CONTROLLER_DIR/venv/bin/activate"
 pip install -r "$CONTROLLER_DIR/requirements.txt"
@@ -69,7 +73,7 @@ EOF
 echo "[5/6] Setting up UAC Dashboard..."
 DASHBOARD_DIR="/opt/uac-dashboard"
 mkdir -p "$DASHBOARD_DIR"
-cp -r ./dashboard/* $DASHBOARD_DIR/
+cp -r "$PROJECT_ROOT/dashboard/"* "$DASHBOARD_DIR/"
 cd "$DASHBOARD_DIR"
 npm install
 npm run build
