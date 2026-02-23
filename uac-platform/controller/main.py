@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
-from routers import radius, network, firewall, analytics, vpn
+from routers import radius, network, firewall, analytics, vpn, ids
 from database import engine
 from models.db import Base
 
@@ -19,6 +19,7 @@ app.include_router(network.router)
 app.include_router(firewall.router)
 app.include_router(analytics.router)
 app.include_router(vpn.router)
+app.include_router(ids.router)
 
 # CORS Configuration
 origins = [
