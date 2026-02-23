@@ -43,10 +43,10 @@ fi
 echo "[4/6] Setting up UAC Controller Engine..."
 CONTROLLER_DIR="/opt/uac-controller"
 mkdir -p "$CONTROLLER_DIR"
-# In a real environment: cp -r ./controller/* $CONTROLLER_DIR/
+cp -r ./controller/* $CONTROLLER_DIR/
 python3 -m venv "$CONTROLLER_DIR/venv"
-# source "$CONTROLLER_DIR/venv/bin/activate"
-# pip install -r "$CONTROLLER_DIR/requirements.txt"
+source "$CONTROLLER_DIR/venv/bin/activate"
+pip install -r "$CONTROLLER_DIR/requirements.txt"
 
 # Create systemd service for Controller
 cat <<EOF > /etc/systemd/system/uac-controller.service
@@ -69,10 +69,10 @@ EOF
 echo "[5/6] Setting up UAC Dashboard..."
 DASHBOARD_DIR="/opt/uac-dashboard"
 mkdir -p "$DASHBOARD_DIR"
-# cp -r ./dashboard/* $DASHBOARD_DIR/
-# cd "$DASHBOARD_DIR"
-# npm install
-# npm run build
+cp -r ./dashboard/* $DASHBOARD_DIR/
+cd "$DASHBOARD_DIR"
+npm install
+npm run build
 
 # Create systemd service for Dashboard
 cat <<EOF > /etc/systemd/system/uac-dashboard.service
@@ -93,8 +93,8 @@ EOF
 # 6. Enable and Start Services
 echo "[6/6] Starting services..."
 systemctl daemon-reload
-# systemctl enable --now uac-controller
-# systemctl enable --now uac-dashboard
+systemctl enable --now uac-controller
+systemctl enable --now uac-dashboard
 systemctl restart freeradius
 
 echo "=================================================="

@@ -53,13 +53,10 @@ class HardwareService:
                     "assigned_profile_id": saved_ports_map.get(iface, {}).get("assigned_profile_id")
                 }
                 discovered_ports.append(port_data)
-        except Exception:
-            # Fallback mock ports if running outside standard Linux
-            discovered_ports = [
-                {"name": "eth0", "mac_address": "00:1A:2B:3C:4D:5E", "operstate": "up", "speed": 1000, "assigned_profile_id": saved_ports_map.get("eth0", {}).get("assigned_profile_id")},
-                {"name": "eth1", "mac_address": "00:1A:2B:3C:4D:5F", "operstate": "down", "speed": -1, "assigned_profile_id": saved_ports_map.get("eth1", {}).get("assigned_profile_id")},
-                {"name": "enp3s0", "mac_address": "AA:BB:CC:DD:EE:FF", "operstate": "up", "speed": 1000, "assigned_profile_id": saved_ports_map.get("enp3s0", {}).get("assigned_profile_id")}
-            ]
+        except Exception as e:
+            # Removed mock ports for production staging
+            print(f"Warning: Hardware discovery failed: {e}")
+            discovered_ports = []
 
         # Sync store
         with open(PORTS_STORE, "w") as f:
