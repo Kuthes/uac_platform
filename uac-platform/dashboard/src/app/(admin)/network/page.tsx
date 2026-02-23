@@ -1,301 +1,316 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import axios from "axios";
-import { Network, Plus, Server, Activity } from "lucide-react";
+import React, { useState, useEffect } from 'react';
+import { Network, Server, Settings, Plus, Activity, Layers, Link as LinkIcon, Link2Off } from 'lucide-react';
 
-interface InterfaceConfig {
+interface PhysicalPort {
     name: string;
-    type: string;
-    status: string;
-    ip: string;
-    vlan_id?: number;
-    parent?: string;
+    mac_address: string;
+    operstate: string;
+    speed: number;
+    assigned_profile_id: string | null;
 }
 
-export default function NetworkPage() {
-    const [interfaces, setInterfaces] = useState<InterfaceConfig[]>([]);
+interface NetworkProfile {
+    id: string;
+    name: string;
+    vlan_id: number | null;
+    ip_cidr: string | null;
+    dhcp_server_enabled: boolean;
+}
+
+export default function NetworkOrchestrationPage() {
+    const [ports, setPorts] = useState<PhysicalPort[]>([]);
+    const [profiles, setProfiles] = useState<NetworkProfile[]>([]);
     const [loading, setLoading] = useState(true);
-    const [showVlanModal, setShowVlanModal] = useState(false);
-    const [showConfigModal, setShowConfigModal] = useState(false);
-    const [selectedInterface, setSelectedInterface] = useState<InterfaceConfig | null>(null);
 
-    // Form State (VLAN)
-    const [parentId, setParentId] = useState("eth1");
-    const [vlanId, setVlanId] = useState("");
-    const [ipCidr, setIpCidr] = useState("");
+    // Profile Form State
+    const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+    const [profileForm, setProfileForm] = useState<Partial<NetworkProfile>>({
+        id: '',
+        name: '',
+        vlan_id: null,
+        ip_cidr: '',
+        dhcp_server_enabled: true
+    });
 
-    // Form State (Config)
-    const [configDhcp, setConfigDhcp] = useState(false);
-    const [configIp, setConfigIp] = useState("");
-    const [configGw, setConfigGw] = useState("");
+    // Port Mapping State
+    const [isPortModalOpen, setIsPortModalOpen] = useState(false);
+    const [selectedPort, setSelectedPort] = useState<PhysicalPort | null>(null);
+    const [selectedProfileId, setSelectedProfileId] = useState<string>("none");
 
-    const fetchInterfaces = async () => {
+    useEffect(() => {
+        fetchData();
+        // Hardware auto-refresh
+        const interval = setInterval(fetchData, 15000);
+        return () => clearInterval(interval);
+    }, []);
+
+    const fetchData = async () => {
         try {
-            const res = await axios.get("http://localhost:8000/system/network/interfaces");
-            setInterfaces(res.data);
+            setLoading(true);
+            const [portsRes, profilesRes] = await Promise.all([
+                fetch('http://localhost:8000/system/network/ports'),
+                fetch('http://localhost:8000/system/network/profiles')
+            ]);
+
+            if (portsRes.ok) setPorts(await portsRes.json());
+            if (profilesRes.ok) setProfiles(await profilesRes.json());
         } catch (err) {
-            console.error("Failed to fetch interfaces", err);
+            console.error("Failed to fetch network state", err);
         } finally {
             setLoading(false);
         }
     };
 
-    useEffect(() => {
-        fetchInterfaces();
-    }, []);
-
-    const handleCreateVlan = async (e: React.FormEvent) => {
+    const handleSaveProfile = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
-            await axios.post("http://localhost:8000/system/network/vlan", {
-                vlan_id: parseInt(vlanId),
-                parent_interface: parentId,
-                ip_cidr: ipCidr,
-                dhcp_server_enabled: true
+            const payload = {
+                ...profileForm,
+                id: profileForm.id || `prof_${Date.now()}` // generate simple id
+            };
+            const res = await fetch('http://localhost:8000/system/network/profiles', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
             });
-            setShowVlanModal(false);
-            fetchInterfaces();
-            alert("VLAN Created Successfully!");
+            if (res.ok) {
+                setIsProfileModalOpen(false);
+                fetchData();
+            }
         } catch (err) {
-            alert("Failed to create VLAN");
             console.error(err);
         }
     };
 
-    const handleConfigureInterface = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!selectedInterface) return;
-
-        try {
-            await axios.post("http://localhost:8000/system/network/interface", {
-                name: selectedInterface.name,
-                dhcp4: configDhcp,
-                addresses: configDhcp ? null : (configIp ? [configIp] : null),
-                gateway4: configDhcp ? null : (configGw ? configGw : null),
-                nameservers: configDhcp ? null : ["8.8.8.8", "1.1.1.1"]
-            });
-            setShowConfigModal(false);
-            fetchInterfaces();
-            alert("Interface Configured Successfully!");
-        } catch (err) {
-            alert("Failed to configure Interface");
-            console.error(err);
+    const handleDeleteProfile = async (id: string) => {
+        if (confirm("Are you sure? Any ports mapped to this profile will lose connectivity.")) {
+            try {
+                await fetch(`http://localhost:8000/system/network/profiles/${id}`, { method: 'DELETE' });
+                fetchData();
+            } catch (err) { console.error(err); }
         }
     };
 
-    const openConfigModal = (iface: InterfaceConfig) => {
-        setSelectedInterface(iface);
-        setConfigDhcp(false);
-        setConfigIp(iface.ip !== "Unconfigured" ? iface.ip : "");
-        setConfigGw("");
-        setShowConfigModal(true);
+    const handleAssignProfile = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!selectedPort) return;
+        try {
+            const res = await fetch(`http://localhost:8000/system/network/ports/${selectedPort.name}/assign/${selectedProfileId}`, {
+                method: 'POST'
+            });
+            if (res.ok) {
+                setIsPortModalOpen(false);
+                fetchData();
+            }
+        } catch (err) { console.error(err); }
+    };
+
+    const getProfileDetails = (id: string | null) => {
+        if (!id) return null;
+        return profiles.find(p => p.id === id);
     };
 
     return (
-        <div className="min-h-screen bg-gray-100 dark:bg-gray-900 p-8">
-            <div className="max-w-7xl mx-auto">
-                <div className="flex justify-between items-center mb-8">
-                    <div>
-                        <h1 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                            <Network className="h-8 w-8 text-blue-500" />
-                            Network Orchestration
-                        </h1>
-                        <p className="text-gray-500 dark:text-gray-400 mt-2">Manage Interfaces, VLANs, and DHCP scopes.</p>
-                    </div>
-                    <button
-                        onClick={() => setShowVlanModal(true)}
-                        className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition"
-                    >
-                        <Plus className="h-5 w-5" />
-                        Add VLAN
-                    </button>
-                </div>
-
-                {/* Interface Table */}
-                <div className="bg-white dark:bg-gray-800 shadow rounded-lg overflow-hidden">
-                    <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                        <thead className="bg-gray-50 dark:bg-gray-700">
-                            <tr>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Interface</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Type</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">IP Address</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Status</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">VLAN ID</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Action</th>
-                            </tr>
-                        </thead>
-                        <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                            {loading ? (
-                                <tr><td colSpan={6} className="text-center py-4">Loading...</td></tr>
-                            ) : interfaces.map((iface) => (
-                                <tr key={iface.name}>
-                                    <td className="px-6 py-4 whitespace-nowrap">
-                                        <div className="flex items-center">
-                                            <Server className="h-5 w-5 text-gray-400 mr-2" />
-                                            <div className="text-sm font-medium text-gray-900 dark:text-white">{iface.name}</div>
-                                        </div>
-                                    </td>
-                                    <td className="px-6 py-4 whitespace-nowrap">
-                                        <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${iface.type === 'physical' ? 'bg-green-100 text-green-800' : 'bg-purple-100 text-purple-800'}`}>
-                                            {iface.type}
-                                        </span>
-                                    </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">{iface.ip || 'Unconfigured'}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap">
-                                        <span className="flex items-center text-sm text-gray-500 dark:text-gray-300">
-                                            <Activity className="h-4 w-4 text-green-500 mr-1" />
-                                            {iface.status}
-                                        </span>
-                                    </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">
-                                        {iface.vlan_id || '-'}
-                                    </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">
-                                        {iface.type === 'physical' && (
-                                            <button
-                                                onClick={() => openConfigModal(iface)}
-                                                className="text-blue-600 hover:text-blue-900 border border-blue-600 hover:bg-blue-50 px-3 py-1 rounded"
-                                            >
-                                                Configure
-                                            </button>
-                                        )}
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
+        <div className="space-y-8">
+            <div className="flex justify-between items-center">
+                <div>
+                    <h1 className="text-2xl font-bold text-white flex items-center">
+                        <Server className="mr-3 text-indigo-500" /> Edge Gateway Orchestration
+                    </h1>
+                    <p className="text-gray-400 mt-1">Manage physical hardware mapping and standardized network profiles.</p>
                 </div>
             </div>
 
-            {/* Create VLAN Modal */}
-            {showVlanModal && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-                    <div className="bg-white dark:bg-gray-800 rounded-lg max-w-md w-full p-6">
-                        <h2 className="text-xl font-bold mb-4 dark:text-white">Create New VLAN</h2>
-                        <form onSubmit={handleCreateVlan} className="space-y-4">
-                            <div>
-                                <label className="block text-sm font-medium mb-1 dark:text-gray-300">Parent Interface</label>
-                                <select
-                                    value={parentId}
-                                    onChange={(e) => setParentId(e.target.value)}
-                                    className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                                >
-                                    <option value="eth0">eth0</option>
-                                    <option value="eth1">eth1</option>
-                                </select>
-                            </div>
-
-                            <div>
-                                <label className="block text-sm font-medium mb-1 dark:text-gray-300">VLAN ID (1-4094)</label>
-                                <input
-                                    type="number"
-                                    min="1"
-                                    max="4094"
-                                    value={vlanId}
-                                    onChange={(e) => setVlanId(e.target.value)}
-                                    className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                                    placeholder="e.g. 10"
-                                    required
-                                />
-                            </div>
-
-                            <div>
-                                <label className="block text-sm font-medium mb-1 dark:text-gray-300">IP Address (CIDR)</label>
-                                <input
-                                    type="text"
-                                    value={ipCidr}
-                                    onChange={(e) => setIpCidr(e.target.value)}
-                                    className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                                    placeholder="e.g. 192.168.10.1/24"
-                                    required
-                                />
-                            </div>
-
-                            <div className="flex justify-end gap-2 mt-6">
-                                <button
-                                    type="button"
-                                    onClick={() => setShowVlanModal(false)}
-                                    className="px-4 py-2 text-gray-600 dark:text-gray-300"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    type="submit"
-                                    className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-                                >
-                                    Create VLAN
-                                </button>
-                            </div>
-                        </form>
+            {/* Hardware Ports Section */}
+            <div className="bg-gray-800 border border-gray-700 rounded-lg shadow-sm overflow-hidden">
+                <div className="px-6 py-4 border-b border-gray-700 bg-gray-900/50 flex items-center justify-between">
+                    <div className="flex items-center">
+                        <Activity size={18} className="text-indigo-400 mr-2" />
+                        <h3 className="text-lg font-medium text-white">Physical Hardware Ports</h3>
                     </div>
                 </div>
-            )}
+                <div className="p-6">
+                    {loading && ports.length === 0 ? (
+                        <div className="text-gray-500">Scanning hardware...</div>
+                    ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                            {ports.map((port, idx) => {
+                                const profile = getProfileDetails(port.assigned_profile_id);
+                                const isUp = port.operstate === "up";
+                                return (
+                                    <div
+                                        key={idx}
+                                        onClick={() => { setSelectedPort(port); setSelectedProfileId(port.assigned_profile_id || "none"); setIsPortModalOpen(true); }}
+                                        className={`p-4 rounded-lg border cursor-pointer hover:border-indigo-500 transition-all ${isUp ? 'bg-gray-700/50 border-gray-600' : 'bg-gray-800/80 border-gray-700 opacity-60'}`}
+                                    >
+                                        <div className="flex justify-between items-start mb-3">
+                                            <div>
+                                                <h4 className="text-lg font-bold text-white font-mono">{port.name}</h4>
+                                                <p className="text-xs text-gray-400 font-mono mt-0.5">{port.mac_address}</p>
+                                            </div>
+                                            {isUp ? (
+                                                <span className="p-1.5 bg-green-500/20 text-green-400 rounded-md" title="Link UP">
+                                                    <LinkIcon size={16} />
+                                                </span>
+                                            ) : (
+                                                <span className="p-1.5 bg-red-500/20 text-red-500 rounded-md" title="Link DOWN">
+                                                    <Link2Off size={16} />
+                                                </span>
+                                            )}
+                                        </div>
 
-            {/* Configure Interface Modal */}
-            {showConfigModal && selectedInterface && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-                    <div className="bg-white dark:bg-gray-800 rounded-lg max-w-md w-full p-6">
-                        <h2 className="text-xl font-bold mb-4 dark:text-white">Configure {selectedInterface.name}</h2>
-                        <form onSubmit={handleConfigureInterface} className="space-y-4">
-                            <div className="flex items-center gap-2 mb-4">
-                                <input
-                                    type="checkbox"
-                                    id="dhcpClient"
-                                    checked={configDhcp}
-                                    onChange={(e) => setConfigDhcp(e.target.checked)}
-                                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                                />
-                                <label htmlFor="dhcpClient" className="text-sm font-medium dark:text-gray-300">
-                                    Enable DHCP Client
+                                        <div className="mt-4 pt-4 border-t border-gray-600/50">
+                                            {profile ? (
+                                                <div>
+                                                    <span className="text-xs font-semibold text-indigo-400 uppercase tracking-wider block mb-1">MAPPED PROFILE</span>
+                                                    <span className="inline-flex items-center text-sm text-white font-medium">
+                                                        <Layers size={14} className="mr-1.5 text-gray-400" /> {profile.name}
+                                                    </span>
+                                                </div>
+                                            ) : (
+                                                <div>
+                                                    <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider block mb-1">MAPPED PROFILE</span>
+                                                    <span className="text-sm text-gray-500 italic">Unassigned (Dead Port)</span>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            {/* Network Profiles Section */}
+            <div className="bg-gray-800 border border-gray-700 rounded-lg shadow-sm overflow-hidden mt-8">
+                <div className="px-6 py-4 border-b border-gray-700 bg-gray-900/50 flex justify-between items-center">
+                    <div className="flex items-center">
+                        <Layers size={18} className="text-purple-400 mr-2" />
+                        <h3 className="text-lg font-medium text-white">Declarative Network Profiles</h3>
+                    </div>
+                    <button
+                        onClick={() => {
+                            setProfileForm({ id: '', name: '', vlan_id: null, ip_cidr: '', dhcp_server_enabled: true });
+                            setIsProfileModalOpen(true);
+                        }}
+                        className="flex items-center px-4 py-2 bg-indigo-600 hover:bg-indigo-700 rounded-md text-sm font-semibold text-white transition-colors"
+                    >
+                        <Plus size={16} className="mr-2" />
+                        New Profile
+                    </button>
+                </div>
+
+                <table className="min-w-full divide-y divide-gray-700">
+                    <thead className="bg-gray-900/50">
+                        <tr>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Profile Name</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">VLAN Tag</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Subnet Details</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Services</th>
+                            <th className="px-6 py-3 text-right text-xs font-medium text-gray-400 uppercase tracking-wider">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody className="bg-gray-800 divide-y divide-gray-700">
+                        {loading && profiles.length === 0 ? (
+                            <tr><td colSpan={5} className="px-6 py-8 text-center text-gray-500">Loading...</td></tr>
+                        ) : profiles.length === 0 ? (
+                            <tr><td colSpan={5} className="px-6 py-8 text-center text-gray-500">No Network Profiles found. Create one.</td></tr>
+                        ) : profiles.map((p, idx) => (
+                            <tr key={idx} className="hover:bg-gray-700/50 transition-colors">
+                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-white">{p.name}</td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-400 font-mono">
+                                    {p.vlan_id ? `VID ${p.vlan_id}` : "Native/Untagged"}
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300 font-mono">
+                                    {p.ip_cidr || "No IP assigned"}
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                    {p.dhcp_server_enabled ? (
+                                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-900 text-green-200">DHCP/Captive Portal</span>
+                                    ) : (
+                                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-700 text-gray-300">Routing Only</span>
+                                    )}
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
+                                    <button onClick={() => handleDeleteProfile(p.id)} className="text-red-400 hover:text-red-300 transition-colors text-xs font-medium">Delete</button>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+
+            {/* Profile Creation Modal */}
+            {isProfileModalOpen && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
+                    <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-lg overflow-hidden border border-gray-700">
+                        <div className="px-6 py-4 border-b border-gray-700 flex justify-between items-center">
+                            <h3 className="text-lg font-medium text-white">Create Network Profile</h3>
+                            <button onClick={() => setIsProfileModalOpen(false)} className="text-gray-400 hover:text-white">✕</button>
+                        </div>
+                        <form onSubmit={handleSaveProfile} className="p-6 space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-300 mb-1">Profile Name</label>
+                                <input type="text" required value={profileForm.name} onChange={e => setProfileForm({ ...profileForm, name: e.target.value })} className="w-full bg-gray-900 border border-gray-600 rounded-md py-2 px-3 text-white focus:ring-indigo-500 focus:border-indigo-500" placeholder="e.g. Corporate IoT VLAN" />
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-300 mb-1">VLAN Tag (Optional)</label>
+                                    <input type="number" min="1" max="4094" value={profileForm.vlan_id || ''} onChange={e => setProfileForm({ ...profileForm, vlan_id: e.target.value ? parseInt(e.target.value) : null })} className="w-full bg-gray-900 border border-gray-600 rounded-md py-2 px-3 text-white focus:ring-indigo-500 focus:border-indigo-500" placeholder="e.g. 50" />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-300 mb-1">Gateway IP CIDR</label>
+                                    <input type="text" value={profileForm.ip_cidr || ''} onChange={e => setProfileForm({ ...profileForm, ip_cidr: e.target.value })} className="w-full bg-gray-900 border border-gray-600 rounded-md py-2 px-3 text-white font-mono focus:ring-indigo-500 focus:border-indigo-500" placeholder="10.50.0.1/24" />
+                                </div>
+                            </div>
+                            <div className="pt-2">
+                                <label className="flex items-center cursor-pointer">
+                                    <input type="checkbox" checked={profileForm.dhcp_server_enabled} onChange={e => setProfileForm({ ...profileForm, dhcp_server_enabled: e.target.checked })} className="rounded bg-gray-900 border-gray-600 text-indigo-600 focus:ring-indigo-500" />
+                                    <span className="ml-2 text-sm text-gray-300">Enable DHCP & Captive Portal</span>
                                 </label>
                             </div>
-
-                            {!configDhcp && (
-                                <>
-                                    <div>
-                                        <label className="block text-sm font-medium mb-1 dark:text-gray-300">Static IP (CIDR)</label>
-                                        <input
-                                            type="text"
-                                            value={configIp}
-                                            onChange={(e) => setConfigIp(e.target.value)}
-                                            className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                                            placeholder="e.g. 192.168.1.100/24"
-                                            required={!configDhcp}
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium mb-1 dark:text-gray-300">Gateway</label>
-                                        <input
-                                            type="text"
-                                            value={configGw}
-                                            onChange={(e) => setConfigGw(e.target.value)}
-                                            className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                                            placeholder="e.g. 192.168.1.1"
-                                        />
-                                    </div>
-                                </>
-                            )}
-
-                            <div className="flex justify-end gap-2 mt-6">
-                                <button
-                                    type="button"
-                                    onClick={() => setShowConfigModal(false)}
-                                    className="px-4 py-2 text-gray-600 dark:text-gray-300"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    type="submit"
-                                    className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-                                >
-                                    Save Config
-                                </button>
+                            <div className="mt-6 flex justify-end space-x-3">
+                                <button type="button" onClick={() => setIsProfileModalOpen(false)} className="px-4 py-2 bg-gray-700 text-white rounded-md">Cancel</button>
+                                <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded-md">Save Profile</button>
                             </div>
                         </form>
                     </div>
                 </div>
             )}
+
+            {/* Port Assignment Modal */}
+            {isPortModalOpen && selectedPort && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
+                    <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-sm overflow-hidden border border-gray-700">
+                        <div className="px-6 py-4 border-b border-gray-700 flex justify-between items-center bg-gray-900/50">
+                            <h3 className="text-lg font-medium text-white">Configure {selectedPort.name}</h3>
+                            <button onClick={() => setIsPortModalOpen(false)} className="text-gray-400 hover:text-white">✕</button>
+                        </div>
+                        <form onSubmit={handleAssignProfile} className="p-6 space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-300 mb-2">Assign Network Profile</label>
+                                <select
+                                    value={selectedProfileId}
+                                    onChange={e => setSelectedProfileId(e.target.value)}
+                                    className="w-full bg-gray-900 border border-gray-600 rounded-md py-2 px-3 text-white focus:ring-indigo-500"
+                                >
+                                    <option value="none">-- Unassigned (Dead Port) --</option>
+                                    {profiles.map(p => (
+                                        <option key={p.id} value={p.id}>{p.name} {p.vlan_id ? `(VLAN ${p.vlan_id})` : "(Native)"}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div className="pt-4 flex justify-end">
+                                <button type="submit" className="w-full px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-md transition-colors">Apply Routing Config</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
         </div>
     );
 }

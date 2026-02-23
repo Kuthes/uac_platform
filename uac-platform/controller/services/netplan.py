@@ -2,6 +2,7 @@ import yaml
 import os
 from typing import List, Dict, Any
 from models.network import VlanCreate, InterfaceConfig
+from services.hardware import HardwareService
 
 # Simulated Host Paths
 HOST_FS_ROOT = os.getenv("HOST_FS_ROOT", "/host-fs") # Mounted in Docker
@@ -131,3 +132,76 @@ class NetplanService:
         In production, this would subprocess.call(['netplan', 'apply'])
         """
         return {"status": "applied", "message": "Netplan configuration simulated apply successful."}
+
+    @staticmethod
+    def generate_from_profiles():
+        """
+        Reads all physical ports, looks up their assigned profiles, 
+        and generates the required Netplan YAML and CoovaChilli config.
+        """
+        NetplanService._ensure_dirs()
+        ports = HardwareService.get_physical_ports()
+        profiles = {p["id"]: p for p in HardwareService.get_network_profiles()}
+        
+        # Clean old generated profile configs
+        for filename in os.listdir(NETPLAN_DIR):
+            if filename.startswith("20-profile-"):
+                os.remove(os.path.join(NETPLAN_DIR, filename))
+        for filename in os.listdir(CHILLI_DIR):
+            if filename.startswith("profile-"):
+                os.remove(os.path.join(CHILLI_DIR, filename))
+                
+        for port in ports:
+            profile_id = port.get("assigned_profile_id")
+            if profile_id and profile_id in profiles:
+                prof = profiles[profile_id]
+                NetplanService._apply_profile_to_port(prof, port["name"])
+                
+    @staticmethod
+    def _apply_profile_to_port(profile: dict, port_name: str):
+        vlan_id = profile.get("vlan_id")
+        ip_cidr = profile.get("ip_cidr")
+        
+        # Scenario A: Untagged Native Port
+        iface_name = port_name
+        
+        # Scenario B: Tagged VLAN Port
+        if vlan_id:
+            iface_name = f"{port_name}.{vlan_id}"
+            
+        filename = f"20-profile-{iface_name}.yaml"
+        filepath = os.path.join(NETPLAN_DIR, filename)
+        
+        netplan_config = {
+            "network": {
+                "version": 2
+            }
+        }
+        
+        if vlan_id:
+            netplan_config["network"]["vlans"] = {
+                iface_name: {
+                    "id": int(vlan_id),
+                    "link": port_name,
+                    "addresses": [ip_cidr] if ip_cidr else []
+                }
+            }
+        else:
+            netplan_config["network"]["ethernets"] = {
+                iface_name: {
+                    "addresses": [ip_cidr] if ip_cidr else []
+                }
+            }
+            
+        with open(filepath, 'w') as f:
+            yaml.dump(netplan_config, f, default_flow_style=False)
+            
+        # Write CoovaChilli Config
+        if profile.get("dhcp_server_enabled"):
+            chilli_conf_path = os.path.join(CHILLI_DIR, f"profile-{iface_name}.conf")
+            with open(chilli_conf_path, 'w') as f:
+                f.write(f"# CoovaChilli Config for Profile: {profile.get('name')} on {iface_name}\n")
+                f.write(f"hs_wanif={iface_name}\n")
+                f.write(f"hs_lanif={iface_name}\n")
+                if ip_cidr:
+                    f.write(f"hs_network={ip_cidr}\n")

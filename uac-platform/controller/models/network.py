@@ -23,3 +23,17 @@ class VpnPeer(BaseModel):
     allowed_ips: Optional[str] = Field(None, description="Routed subnets (L3 only)")
     target_vlan: Optional[str] = Field(None, description="Local VLAN to bridge (L2 only)")
     is_active: bool = Field(True, description="Tunnel status administrative toggle")
+
+class NetworkProfile(BaseModel):
+    id: str = Field(..., description="Unique Profile ID")
+    name: str = Field(..., description="Profile Name (e.g., Guest Wi-Fi)")
+    vlan_id: Optional[int] = Field(None, ge=1, le=4094, description="VLAN ID to tag")
+    ip_cidr: Optional[str] = Field(None, description="IP Address with CIDR (e.g., 192.168.10.1/24)")
+    dhcp_server_enabled: bool = Field(False, description="Enable DHCP Server via CoovaChilli")
+
+class PhysicalPort(BaseModel):
+    name: str = Field(..., description="Hardware Interface name (e.g., eth0)")
+    mac_address: str = Field(..., description="Hardware MAC Address")
+    operstate: str = Field("unknown", description="Link status (up/down)")
+    speed: int = Field(-1, description="Link speed in Mbps")
+    assigned_profile_id: Optional[str] = Field(None, description="ID of the assigned NetworkProfile")
