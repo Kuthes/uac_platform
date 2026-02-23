@@ -1,7 +1,7 @@
 import yaml
 import os
 from typing import List, Dict, Any
-from ..models.network import VlanCreate
+from models.network import VlanCreate, InterfaceConfig
 
 # Simulated Host Paths
 HOST_FS_ROOT = os.getenv("HOST_FS_ROOT", "/host-fs") # Mounted in Docker

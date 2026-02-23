@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from ..database import get_db
-from ..models.db import RadCheck, RadReply # type: ignore
-from ..models.radius import RadiusUserCreate, RadiusUser
+from database import get_db
+from models.db import RadCheck, RadReply # type: ignore
+from models.radius import RadiusUserCreate, RadiusUser
 
 router = APIRouter(
     prefix="/radius",

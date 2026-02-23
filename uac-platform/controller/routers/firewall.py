@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException
-from ..models.firewall import FirewallPolicy
-from ..services.firewall import FirewallService
+from typing import List
+from models.firewall import FirewallPolicy
+from services.firewall import FirewallService
 
 router = APIRouter(
     prefix="/security",

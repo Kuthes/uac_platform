@@ -1,7 +1,7 @@
 import os
 import json
 from typing import List
-from ..models.firewall import ApplicationProtocol, FirewallPolicy, FirewallRule
+from models.firewall import ApplicationProtocol, FirewallPolicy, FirewallRule
 
 HOST_FS_ROOT = os.getenv("HOST_FS_ROOT", "/host-fs")
 FIREWALL_DIR = os.path.join(HOST_FS_ROOT, "etc/firewall")

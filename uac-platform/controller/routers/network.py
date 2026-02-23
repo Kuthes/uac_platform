@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from typing import List
-from ..models.network import InterfaceConfig, VlanCreate
-from ..services.netplan import NetplanService
+from models.network import InterfaceConfig, VlanCreate
+from services.netplan import NetplanService
 
 router = APIRouter(
     prefix="/system/network",
