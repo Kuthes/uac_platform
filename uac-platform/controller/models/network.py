@@ -14,3 +14,12 @@ class VlanCreate(BaseModel):
     ip_cidr: str = Field(..., description="IP Address with CIDR (e.g., 192.168.10.1/24)")
     dhcp_server_enabled: bool = Field(True, description="Enable DHCP Server (via CoovaChilli)")
     description: Optional[str] = Field(None, description="Description of this network")
+
+class VpnPeer(BaseModel):
+    name: str = Field(..., description="Peer Name / Site Name")
+    mode: Literal["L2", "L3"] = Field("L3", description="L2 (Bridged) or L3 (Routed)")
+    endpoint: str = Field(..., description="Remote Public IP:Port")
+    public_key: str = Field(..., description="WireGuard Public Key or SoftEther Cert")
+    allowed_ips: Optional[str] = Field(None, description="Routed subnets (L3 only)")
+    target_vlan: Optional[str] = Field(None, description="Local VLAN to bridge (L2 only)")
+    is_active: bool = Field(True, description="Tunnel status administrative toggle")
